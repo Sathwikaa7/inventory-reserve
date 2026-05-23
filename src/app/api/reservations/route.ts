@@ -1,9 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 
-export async function POST(req: NextRequest) {
+export async function POST(
+  request: NextRequest
+) {
   try {
-    const body = await req.json();
+
+    const body = await request.json();
 
     const {
       productId,
@@ -11,79 +14,16 @@ export async function POST(req: NextRequest) {
       quantity,
     } = body;
 
-    const reservation = await prisma.$transaction(
-      async (tx) => {
-
-        const inventory =
-          await tx.inventory.findFirst({
-            where: {
-              productId: productId,
-              warehouseId: warehouseId,
-            },
-          });
-
-        if (!inventory) {
-          throw new Error("INVENTORY_NOT_FOUND");
-        }
-
-        const availableUnits =
-          inventory.totalUnits -
-          inventory.reservedUnits;
-
-        if (availableUnits < quantity) {
-          throw new Error("INSUFFICIENT_STOCK");
-        }
-
-        await tx.inventory.update({
-          where: {
-            id: inventory.id,
-          },
-          data: {
-            reservedUnits: {
-              increment: quantity,
-            },
-          },
-        });
-
-        const expiresAt =
-          new Date(Date.now() + 10 * 60 * 1000);
-
-        const createdReservation =
-          await tx.reservation.create({
-            data: {
-              productId,
-              warehouseId,
-              quantity,
-              expiresAt,
-            },
-          });
-
-        return createdReservation;
-      }
-    );
-
-    return NextResponse.json(reservation);
-
-  } catch (error: any) {
-
-    console.error(error);
-
-    if (
-      error.message === "INSUFFICIENT_STOCK"
-    ) {
-      return NextResponse.json(
-        {
-          error: "Not enough stock available",
+    const inventory =
+      await prisma.inventory.findFirst({
+        where: {
+          productId,
+          warehouseId,
         },
-        {
-          status: 409,
-        }
-      );
-    }
+      });
 
-    if (
-      error.message === "INVENTORY_NOT_FOUND"
-    ) {
+    if (!inventory) {
+
       return NextResponse.json(
         {
           error: "Inventory not found",
@@ -94,9 +34,59 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    const availableUnits =
+      inventory.totalUnits -
+      inventory.reservedUnits;
+
+    if (availableUnits < quantity) {
+
+      return NextResponse.json(
+        {
+          error: "Not enough stock",
+        },
+        {
+          status: 409,
+        }
+      );
+    }
+
+    await prisma.inventory.update({
+      where: {
+        id: inventory.id,
+      },
+      data: {
+        reservedUnits: {
+          increment: quantity,
+        },
+      },
+    });
+
+    const reservation =
+      await prisma.reservation.create({
+        data: {
+          productId,
+          warehouseId,
+          quantity,
+          status: "PENDING",
+          expiresAt: new Date(
+            Date.now() +
+            10 * 60 * 1000
+          ),
+        },
+      });
+
+    return NextResponse.json(
+      reservation
+    );
+
+  } catch (error) {
+
+    console.error(error);
+
     return NextResponse.json(
       {
-        error: "Failed to create reservation",
+        error:
+          "Failed to create reservation",
       },
       {
         status: 500,
