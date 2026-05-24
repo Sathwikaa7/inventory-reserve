@@ -3,50 +3,49 @@ import { prisma } from "@/lib/prisma";
 
 export async function GET() {
   try {
+    // Optimized query with selective fields only
     const products = await prisma.product.findMany({
-      include: {
+      select: {
+        id: true,
+        name: true,
         inventories: {
-          include: {
-            warehouse: true,
-          },
-        },
+          select: {
+            id: true,
+            totalUnits: true,
+            reservedUnits: true,
+            warehouseId: true,
+            warehouse: {
+              select: {
+                id: true,
+                name: true,
+              }
+            }
+          }
+        }
       },
+      // Limit to prevent too much data
+      take: 5,
     });
 
     const formattedProducts = products.map((product) => ({
       id: product.id,
       name: product.name,
-
       inventories: product.inventories.map((inventory) => ({
         inventoryId: inventory.id,
-
         warehouseId: inventory.warehouse.id,
-
         warehouseName: inventory.warehouse.name,
-
         totalUnits: inventory.totalUnits,
-
         reservedUnits: inventory.reservedUnits,
-
-        availableUnits:
-          inventory.totalUnits -
-          inventory.reservedUnits,
+        availableUnits: inventory.totalUnits - inventory.reservedUnits,
       })),
     }));
 
     return NextResponse.json(formattedProducts);
-
   } catch (error) {
-
     console.error(error);
-
     return NextResponse.json(
-      {
-        error: "Failed to fetch products",
-      },
-      {
-        status: 500,
-      }
+      { error: "Failed to fetch products" },
+      { status: 500 }
     );
   }
 }
